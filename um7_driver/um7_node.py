@@ -29,6 +29,11 @@ from um7_driver.um7_parser import Um7Parser
 
 DEG_TO_RAD = math.pi / 180.0
 
+# DREG_ACCEL_PROC is emitted in g, NOT m/s^2 -- the datasheet register text
+# says "m/s/s" but the firmware outputs gravities (verified on hardware: a
+# static sensor reads magnitude ~1.0 g, not ~9.81). Convert to REP-103 m/s^2.
+GRAVITY = 9.80665
+
 # Constant reframing quaternions (x, y, z, w). See CLAUDE.md "프레임 규약":
 # the UM7 output frame is NOT specified in the datasheet, so the enu transform
 # below is an *assumption* (NED world / FRD body) that must be validated on
@@ -186,11 +191,11 @@ class Um7Node(Node):
             msg.angular_velocity_covariance[0] = -1.0
 
         if {'accel_proc_x', 'accel_proc_y', 'accel_proc_z'} <= self._state.keys():
-            # DREG_ACCEL_PROC is already m/s^2 -- no scaling (see CLAUDE.md).
+            # PROC accel is in g on real hardware -> scale to m/s^2 (see GRAVITY).
             ax, ay, az = self._to_body(
-                self._state['accel_proc_x'],
-                self._state['accel_proc_y'],
-                self._state['accel_proc_z'])
+                self._state['accel_proc_x'] * GRAVITY,
+                self._state['accel_proc_y'] * GRAVITY,
+                self._state['accel_proc_z'] * GRAVITY)
             msg.linear_acceleration.x, msg.linear_acceleration.y, \
                 msg.linear_acceleration.z = ax, ay, az
         else:

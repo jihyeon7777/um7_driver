@@ -129,14 +129,14 @@ ros2 launch um7_driver um7.launch.py
 |---|---|---|---|---|---|
 | `orientation` | EULER 112~116 | int16 ÷91.02222 | deg | rad→quat | deg→rad 후 RPY→쿼터니언 |
 | `angular_velocity` | **GYRO_PROC 97~99** | float32 | deg/s | rad/s | **deg→rad** |
-| `linear_acceleration` | ACCEL_PROC 101~103 | float32 | **m/s²** | m/s² | **없음** |
+| `linear_acceleration` | ACCEL_PROC 101~103 | float32 | **g** (실측 확정; 데이터시트 "m/s/s" 표기와 불일치) | m/s² | **×9.80665** |
 | `imu/mag` | MAG_PROC 105~107 | float32 | **unit-norm(무차원)** | Tesla | **직접 매핑 불가**(아래) |
 | `imu/temperature` | TEMPERATURE 95 | float32 | °C | °C | 없음 |
 
 ### 핵심 두 가지
-1. **가속도는 변환 없음.** `DREG_ACCEL_PROC`는 데이터시트상 이미 `m/s/s`, 즉 **m/s²**다. g가 아니라서 REP-103과 이미 같다.
-   (NMEA 센서 패킷은 accel을 "gravities"로 표기하지만, 그건 NMEA 표현이고 바이너리 PROC 레지스터와 별개다. 바이너리 드라이버는 PROC를 쓴다.)
-   - **하드웨어 검증**: 센서를 평평히 두고 한 축이 **~9.81이면 m/s²(변환 X)**, **~1.0이면 실제로 g라 ×9.80665**. 실측으로 확정할 것.
+1. **가속도는 g다 → ×9.80665 (하드웨어로 확정됨).** 데이터시트 레지스터 설명은 `DREG_ACCEL_PROC`를 `m/s/s`로 적어 놨지만, **실제 펌웨어 출력은 g**다.
+   - **실측 근거(2026-07-02)**: 정지 상태에서 accel 벡터 크기 = **1.02 g** (225 샘플 평균, ~9.81 아님). → PROC accel은 g 단위. 노드에서 `GRAVITY=9.80665`를 곱해 REP-103 m/s²로 변환한다(`um7_node.py`).
+   - 마찬가지로 mag PROC 벡터 크기도 **~1.005**로 나와 **unit-norm** 확인됨(아래 2번).
 2. **자력계는 unit-norm이라 Tesla가 아니다.** `sensor_msgs/MagneticField`는 Tesla를 기대하므로 가공 mag를 그대로 넣으면 단위가 안 맞는다.
    heading용 **정규화 방향 벡터**로는 유효. 물리 단위가 필요하면 raw mag(92~94)를 써야 하나, **raw→µT 스케일은 데이터시트에 명시가 없다** → TODO에서 결정.
 

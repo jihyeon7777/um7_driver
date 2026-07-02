@@ -232,9 +232,14 @@ ros2 launch um7_driver um7.launch.py
   (스트리밍 parser가 부분 패킷을 이미 처리함).
 - 인코딩이 섞여 있으니(float32 / int16+제수 / raw) 파서에서 레지스터별로 명확히 분기.
 
-## Definition of Done (완료 정의)
-- `ros2 launch` 시 `imu/data`가 발행되고(이벤트 구동), 센서를 돌리면 orientation이 반응
-  (RViz에서 `publish_tf:=true`, Fixed Frame = `world`, TF/Axes 추가해서 확인).
-- 평평히 뒀을 때 `linear_acceleration`이 한 축 ~9.81 m/s²로 나오는지(중력) 실측 확인.
-- `colcon test` 통과 (위 Euler 예제 + 하드웨어로 직접 확인한 테스트 벡터로).
-- node에 하드코딩된 port/scale 0개. 다른 로봇은 YAML만 고쳐서 동작.
+## Definition of Done (완료 정의) — 전부 충족(2026-07-02)
+- [x] `imu/data`가 이벤트 구동으로 발행되고 센서를 돌리면 orientation 반응 — **RViz로 육안 확인 완료**.
+- [x] 평평히 뒀을 때 `linear_acceleration` 중력 ~9.81 m/s² — 확인(1.02g×9.81, node에서 g→m/s²).
+- [x] `colcon test` 통과 (Euler 예제 + 하드웨어 캡처 벡터). 19 passed, 1 skipped.
+- [x] node에 하드코딩 port/scale 0개. YAML만 고쳐 재사용.
+
+### RViz 시각화 노트 (`ros2 launch um7_driver display.launch.py`)
+- `rviz/um7.rviz`: Fixed Frame=`world`, **`rviz_imu_plugin/Imu` 박스**(`/imu/data`, QoS Best Effort)로 orientation 표시.
+- ⚠️ **함정**: TF 기반 `Axes`/`TF` 축 표시는 움직일 때 **지연·이중(두 축)·혼자 도는 것처럼** 보일 수 있다
+  (TF 조회 보간 아티팩트). 발행 데이터는 안정적임(측정으로 확인: 정지 시 최대 점프 0.05°, 쿼터니언 부호 뒤집힘 0).
+  → **메시지 직결 IMU 박스**를 쓰면 깔끔하다. 축이 이상하면 데이터 의심 전에 이 렌더링 이슈부터 의심.

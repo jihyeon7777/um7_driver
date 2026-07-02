@@ -220,7 +220,10 @@ ros2 launch um7_driver um7.launch.py
       → `std_srvs/Trigger` 서비스 `zero_gyros`, `set_mag_reference` 구현. 명령 패킷(PT=0) 전송 후
       COMMAND_COMPLETE/FAILED 응답을 기다려 success 반환. 하드웨어로 둘 다 success 확인(2026-07-02).
 - [ ] (선택, 보류) **B 모드**: Q 비트 세팅 write 패킷 + `DREG_QUAT`(÷29789.09091) 직접 사용 경로.
-- [ ] (선택) 진단(checksum 에러율, 패킷 레이트)을 diagnostic_updater로.
+- [x] (선택) 진단(checksum 에러율, 패킷 레이트)을 diagnostic_updater로.
+      → `publish_diagnostics`(기본 true)로 `/diagnostics` 발행: packet_rate_hz, packets_total,
+      checksum_errors + `DREG_HEALTH` 비트 디코딩(gyro/accel/mag init, ACC_N/MG_N, OVF, GPS, sats, HDOP).
+      init 실패·OVF=ERROR, norm 경고=WARN. 하드웨어 확인(2026-07-02): "OK (72 Hz)", checksum_errors=0.
 
 ## 코딩 표준
 - 타입 힌트 + docstring. 함수는 작게. parser는 ROS-free 유지.

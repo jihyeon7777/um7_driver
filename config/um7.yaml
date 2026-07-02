@@ -9,3 +9,4 @@
     frame_convention: "enu"
     publish_tf: false
     publish_health: false
+    publish_diagnostics: true   # /diagnostics: packet rate, checksum errors, health bits

@@ -12,6 +12,8 @@ mode so no configuration write is needed (see CLAUDE.md, "A 모드").
 import math
 import threading
 
+from diagnostic_msgs.msg import DiagnosticStatus
+from diagnostic_updater import Updater
 from geometry_msgs.msg import TransformStamped
 import rclpy
 from rclpy.executors import ExternalShutdownException
@@ -83,6 +85,8 @@ class Um7Node(Node):
         convention = self.declare_parameter('frame_convention', 'enu').value
         self.publish_tf = self.declare_parameter('publish_tf', False).value
         self.publish_health = self.declare_parameter('publish_health', False).value
+        self.publish_diagnostics = self.declare_parameter(
+            'publish_diagnostics', True).value
 
         self._to_enu = str(convention).lower() == 'enu'
         if self._to_enu:
@@ -114,6 +118,16 @@ class Um7Node(Node):
 
         self.create_service(Trigger, 'zero_gyros', self._on_zero_gyros)
         self.create_service(Trigger, 'set_mag_reference', self._on_set_mag_reference)
+
+        # Diagnostics: packet-stream stats + decoded DREG_HEALTH bits (1 Hz).
+        self._packet_count = 0
+        self._diag_updater = None
+        if self.publish_diagnostics:
+            self._last_packet_count = 0
+            self._last_diag_time = self.get_clock().now().nanoseconds / 1e9
+            self._diag_updater = Updater(self)
+            self._diag_updater.setHardwareID(self.port or 'um7')
+            self._diag_updater.add('UM7', self._diagnostics)
 
         self._stop = threading.Event()
         self._thread = None
@@ -211,10 +225,59 @@ class Um7Node(Node):
             reg.CMD_SET_MAG_REFERENCE, timeout=3.0)
         return response
 
+    # --- diagnostics --------------------------------------------------------
+
+    def _diagnostics(self, stat):
+        """Report packet-stream stats and decoded DREG_HEALTH bits."""
+        now = self.get_clock().now().nanoseconds / 1e9
+        dt = now - self._last_diag_time
+        count = self._packet_count
+        rate = (count - self._last_packet_count) / dt if dt > 0 else 0.0
+        self._last_diag_time = now
+        self._last_packet_count = count
+        stat.add('packet_rate_hz', f'{rate:.1f}')
+        stat.add('packets_total', str(count))
+        stat.add('checksum_errors', str(self._parser.checksum_errors))
+
+        if rate <= 0.0:
+            stat.summary(DiagnosticStatus.WARN, 'No packets received')
+            return stat
+        health = self._state.get('health')
+        if health is None:
+            stat.summary(DiagnosticStatus.WARN, 'No health register yet')
+            return stat
+        health = int(health)
+        flags = {
+            'mag_init_failed': bool(health & (1 << 1)),
+            'gyro_init_failed': bool(health & (1 << 2)),
+            'accel_init_failed': bool(health & (1 << 3)),
+            'accel_norm_bad': bool(health & (1 << 4)),
+            'mag_norm_bad': bool(health & (1 << 5)),
+            'uart_overflow': bool(health & (1 << 8)),
+            'gps_timeout': bool(health & 1),
+        }
+        for key, value in flags.items():
+            stat.add(key, str(value))
+        stat.add('sats_in_view', str((health >> 10) & 0x3F))
+        stat.add('sats_used', str((health >> 26) & 0x3F))
+        stat.add('hdop', f'{((health >> 16) & 0x3FF) / 10.0:.1f}')
+
+        if (flags['gyro_init_failed'] or flags['accel_init_failed']
+                or flags['mag_init_failed']):
+            stat.summary(DiagnosticStatus.ERROR, 'Sensor init failed')
+        elif flags['uart_overflow']:
+            stat.summary(DiagnosticStatus.ERROR, 'UART overflow: lower COM_RATES')
+        elif flags['accel_norm_bad'] or flags['mag_norm_bad']:
+            stat.summary(DiagnosticStatus.WARN, 'Accel/mag norm out of range')
+        else:
+            stat.summary(DiagnosticStatus.OK, f'OK ({rate:.0f} Hz)')
+        return stat
+
     # --- packet handling ----------------------------------------------------
 
     def _handle_packet(self, packet) -> None:
         """Update cached state and publish messages driven by this packet."""
+        self._packet_count += 1
         if not packet.raw_registers and not packet.is_batch:
             self._note_command_ack(packet)  # COMMAND_COMPLETE / _FAILED reply
         self._state.update(packet.values)

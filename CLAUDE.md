@@ -206,16 +206,14 @@ ros2 launch um7_driver um7.launch.py
 ---
 
 ## TODO 백로그 (열린 작업)
-- [ ] `um7_registers.py`의 **모든** 주소·인코딩·스케일을 데이터시트로 확인.
-      특히 **인코딩 종류(float32 vs int16+제수 vs raw)**를 레지스터마다 정확히 구분.
-- [ ] 가공 gyro(deg→rad) / accel(변환 X — 단 하드웨어로 m/s² vs g 실측 확정) / temperature / health
-      디코딩·검증, 테스트 포함.
-- [ ] **자력계 단위 결정**: unit-norm(방향 벡터)로 갈지, raw→물리단위로 갈지. MagneticField 채우기 전 확정.
-- [ ] `frame_convention`으로 제어하는 프레임→ENU 변환 (**프레임 자체를 하드웨어로 먼저 확인**).
-- [ ] Imu/Mag의 covariance 채우기 (REP-145; 미지원 필드는 배열 [0] 원소를 −1로).
-- [ ] **이벤트 구동 발행 + 헤더 타임스탬프 정책** 배선.
-- [ ] 시리얼 자동 재연결(뽑혔다 꽂히면 backoff 재시도로 복구); 깔끔한 종료.
-- [ ] launch의 `port:=` 오버라이드가 YAML보다 우선하게 배선 (OpaqueFunction).
+- [x] `um7_registers.py`의 주소·인코딩·스케일을 데이터시트로 확인(발행에 쓰는 레지스터). float32 / int16+제수 / uint32 비트필드 구분.
+- [x] 가공 gyro(deg→rad) / accel(**하드웨어 실측: g 단위 → ×9.80665**) / temperature / health 디코딩·검증, 테스트 포함.
+- [x] **자력계 단위 결정**: **unit-norm 방향 벡터**로 확정(실측 크기 ~1.005). MagneticField에 그대로 매핑, magnitude는 신뢰 주의(주석).
+- [x] `frame_convention`으로 제어하는 프레임→ENU 변환. **하드웨어로 NED body + yaw/accel/gyro 변환 확인됨**(위 프레임 규약 절).
+- [~] Imu/Mag의 covariance: 미지원 필드는 배열 [0]=−1 처리 완료. 실제 공분산 값은 UM7이 제공 안 함(미정, 0으로 둠).
+- [x] **이벤트 구동 발행 + 헤더 타임스탬프**: 패킷 수신 시 발행, stamp=ROS now(). 배선 완료.
+- [x] 시리얼 자동 재연결(backoff 0.5→5s) + 깔끔한 종료(SIGINT/ExternalShutdown 처리, 컨텍스트 무효 시 발행 가드).
+- [x] launch의 `port:=` 오버라이드가 YAML보다 우선(OpaqueFunction). 배선 완료.
 - [x] `zero_gyros`(0xAD) / `set_mag_reference`(0xB0)를 ROS 서비스로 (UM7 명령 패킷).
       → `std_srvs/Trigger` 서비스 `zero_gyros`, `set_mag_reference` 구현. 명령 패킷(PT=0) 전송 후
       COMMAND_COMPLETE/FAILED 응답을 기다려 success 반환. 하드웨어로 둘 다 success 확인(2026-07-02).

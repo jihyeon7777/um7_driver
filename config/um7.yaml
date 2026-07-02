@@ -1,0 +1,11 @@
+# UM7 driver parameters. Applies to any node name/namespace via the /** wildcard.
+/**:
+  ros__parameters:
+    # Serial path. Use /dev/serial/by-id/... (stable) -- NOT /dev/ttyUSBn.
+    port: ""
+    baud: 115200
+    frame_id: "imu_link"
+    # "enu" -> assumed NED->ENU transform (verify on hardware); "ned" -> raw.
+    frame_convention: "enu"
+    publish_tf: false
+    publish_health: false

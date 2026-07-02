@@ -1,0 +1,13 @@
+# colcon
+build/
+install/
+log/
+
+# datasheet is a reference binary kept outside version control (see CLAUDE.md)
+*.pdf
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/

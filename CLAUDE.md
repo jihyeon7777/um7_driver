@@ -156,7 +156,10 @@ ros2 launch um7_driver um7.launch.py
   → `Q_NED2ENU · q_ned · Q_FRD2FLU` 변환(node)이 옳다.
 - **gyro 부호 검증됨(2026-07-02)**: 연속 회전 중 `gyro_z` 부호가 yaw 각도 증감과 일치(82중 78, 나머지는 반전 지점 ≈0 노이즈).
   CW=yaw↑=gyro_z>0 → gyro도 NED Z-down body. node의 `(x,−y,−z)`로 ROS FLU 각속도 부호도 일관.
-- ⚠️ **남은 확인(경미)**: roll/pitch 부호는 실제 tilt 자세로 아직 직접 확인 안 함(위 결과들과 모델상 일관).
+- **roll/pitch 부호 검증됨(2026-07-02)**: 우현 아래 → roll ≈ +30°(=+roll), nose-down → pitch ≈ −32°(=−pitch), 표준 NED 일치.
+  두 자세 모두 측정 accel이 NED 비력식 `(sinθ, −sinφ·cosθ, −cosφ·cosθ)`와 vector error < 0.002로 일치.
+  → **프레임 검증 완료**(body=NED/FRD, accel/yaw/gyro/roll/pitch 전부 하드웨어 확인).
+  (검증 팁: 정지 시 측정 accel을 위 비력식과 비교하면 roll/pitch 부호를 언제든 재확인 가능.)
 - (참고) CH Robotics 관례상 NED로 추정했었고, 이제 하드웨어로 확인됨. 데이터시트에는 여전히 좌표계 다이어그램 명시가 없다.
 - position/velocity 레지스터는 North/East/**Up**(Down 아님)이니 축별 부호를 조심.
 - NED(추정) ↔ ENU(ROS): `frame_convention`을 따를 것. RViz에서 축이 반대로 돌면

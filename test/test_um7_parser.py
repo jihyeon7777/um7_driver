@@ -3,7 +3,7 @@
 import pytest
 
 from um7_driver import um7_registers as reg
-from um7_driver.um7_parser import compute_checksum, Um7Parser
+from um7_driver.um7_parser import build_command_packet, compute_checksum, Um7Parser
 
 # Verified Euler batch packet from the datasheet / CLAUDE.md.
 # 'snp' D4 70 <20 data bytes> 0C5F  -- checksum verified = 0x0C5F.
@@ -71,3 +71,19 @@ def test_bad_checksum_is_rejected():
     parser = Um7Parser()
     assert parser.feed(bytes(corrupt)) == []
     assert parser.checksum_errors >= 1
+
+
+def test_build_command_packet_bytes():
+    """Command packets are 'snp' + PT(0) + address + 16-bit checksum."""
+    assert build_command_packet(reg.CMD_ZERO_GYROS).hex() == '736e7000ad01fe'
+    assert build_command_packet(reg.CMD_SET_MAG_REFERENCE).hex() == '736e7000b00201'
+
+
+def test_command_packet_has_no_data():
+    """A command packet round-trips as an addressed, data-less packet."""
+    packet = Um7Parser().feed(build_command_packet(reg.CMD_ZERO_GYROS))[0]
+    assert packet.address == reg.CMD_ZERO_GYROS
+    assert packet.values == {}
+    assert packet.raw_registers == {}
+    assert packet.is_batch is False
+    assert packet.command_failed is False

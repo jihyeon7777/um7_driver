@@ -104,6 +104,12 @@ DREG_EULER_PHI_THETA_DOT = 0x72  # 114
 DREG_EULER_PSI_DOT = 0x73        # 115
 DREG_EULER_TIME = 0x74           # 116
 
+# --- Command addresses (no physical register; triggered with PT=0) ----------
+# Sending 'snp' + PT(0x00) + address + checksum runs the command; the UM7
+# replies COMMAND_COMPLETE (same address, PT=0) or COMMAND_FAILED (CF bit set).
+CMD_ZERO_GYROS = 0xAD            # 173: zero the rate-gyro biases (keep still)
+CMD_SET_MAG_REFERENCE = 0xB0     # 176: set current heading as magnetic north
+
 
 def _reg(address: int, name: str, *fields: Field) -> Register:
     """Build a Register from an address, name, and field descriptors."""

@@ -14,10 +14,12 @@ import threading
 
 from geometry_msgs.msg import TransformStamped
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Imu, MagneticField, Temperature
 from std_msgs.msg import UInt32
+from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
 
 try:
@@ -25,7 +27,8 @@ try:
 except ImportError:  # pragma: no cover - exercised only without pyserial
     serial = None
 
-from um7_driver.um7_parser import Um7Parser
+from um7_driver import um7_registers as reg
+from um7_driver.um7_parser import build_command_packet, Um7Parser
 
 DEG_TO_RAD = math.pi / 180.0
 
@@ -101,6 +104,17 @@ class Um7Node(Node):
             self._health_pub = self.create_publisher(UInt32, 'imu/health', 10)
         self._tf_broadcaster = TransformBroadcaster(self) if self.publish_tf else None
 
+        # Serial handle shared with service callbacks (guarded by a lock).
+        self._serial_port = None
+        self._serial_lock = threading.Lock()
+        # Pending command acknowledgements: address -> Event, plus a fail flag.
+        self._ack_lock = threading.Lock()
+        self._ack_events: 'dict[int, threading.Event]' = {}
+        self._ack_failed: 'dict[int, bool]' = {}
+
+        self.create_service(Trigger, 'zero_gyros', self._on_zero_gyros)
+        self.create_service(Trigger, 'set_mag_reference', self._on_set_mag_reference)
+
         self._stop = threading.Event()
         self._thread = None
         if serial is None:
@@ -122,7 +136,13 @@ class Um7Node(Node):
                 with serial.Serial(self.port, self.baud, timeout=0.1) as port:
                     self.get_logger().info(f'Opened {self.port} @ {self.baud} baud')
                     backoff = 0.5
-                    self._read_until_error(port)
+                    with self._serial_lock:
+                        self._serial_port = port
+                    try:
+                        self._read_until_error(port)
+                    finally:
+                        with self._serial_lock:
+                            self._serial_port = None
             except (OSError, serial.SerialException) as exc:
                 self.get_logger().warn(
                     f'Serial error: {exc}; reconnecting in {backoff:.1f}s')
@@ -133,9 +153,12 @@ class Um7Node(Node):
         """Pump bytes from an open serial ``port`` into the parser."""
         while rclpy.ok() and not self._stop.is_set():
             data = port.read(256)
-            if data:
-                for packet in self._parser.feed(data):
-                    self._handle_packet(packet)
+            if not data:
+                continue
+            for packet in self._parser.feed(data):
+                if self._stop.is_set() or not rclpy.ok():
+                    return  # avoid publishing on an invalidated context
+                self._handle_packet(packet)
 
     def shutdown(self) -> None:
         """Signal the serial thread to stop and wait for it to finish."""
@@ -143,10 +166,57 @@ class Um7Node(Node):
         if self._thread is not None:
             self._thread.join(timeout=2.0)
 
+    # --- commands (UM7 command packets exposed as ROS services) -------------
+
+    def _send_command(self, address: int, timeout: float) -> tuple:
+        """Send a UM7 command and wait for its COMMAND_COMPLETE reply."""
+        event = threading.Event()
+        with self._ack_lock:
+            self._ack_events[address] = event
+            self._ack_failed.pop(address, None)
+        try:
+            with self._serial_lock:
+                port = self._serial_port
+                if port is None:
+                    return (False, 'serial port is not open')
+                port.write(build_command_packet(address))
+            if not event.wait(timeout):
+                return (False, f'no COMMAND_COMPLETE within {timeout:.0f}s')
+            with self._ack_lock:
+                if self._ack_failed.get(address, False):
+                    return (False, 'UM7 reported COMMAND_FAILED')
+            return (True, 'ok')
+        finally:
+            with self._ack_lock:
+                self._ack_events.pop(address, None)
+                self._ack_failed.pop(address, None)
+
+    def _note_command_ack(self, packet) -> None:
+        """Signal any service waiting on a COMMAND_COMPLETE for this address."""
+        with self._ack_lock:
+            event = self._ack_events.get(packet.address)
+            if event is not None:
+                self._ack_failed[packet.address] = packet.command_failed
+                event.set()
+
+    def _on_zero_gyros(self, request, response):
+        """Handle std_srvs/Trigger: zero the rate-gyro biases (keep still)."""
+        response.success, response.message = self._send_command(
+            reg.CMD_ZERO_GYROS, timeout=5.0)
+        return response
+
+    def _on_set_mag_reference(self, request, response):
+        """Handle std_srvs/Trigger: set the current heading as magnetic north."""
+        response.success, response.message = self._send_command(
+            reg.CMD_SET_MAG_REFERENCE, timeout=3.0)
+        return response
+
     # --- packet handling ----------------------------------------------------
 
     def _handle_packet(self, packet) -> None:
         """Update cached state and publish messages driven by this packet."""
+        if not packet.raw_registers and not packet.is_batch:
+            self._note_command_ack(packet)  # COMMAND_COMPLETE / _FAILED reply
         self._state.update(packet.values)
         stamp = self.get_clock().now().to_msg()
         keys = packet.values.keys()
@@ -262,7 +332,7 @@ def main(args=None) -> None:
     node = Um7Node()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.shutdown()

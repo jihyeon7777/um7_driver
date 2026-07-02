@@ -27,11 +27,18 @@ class Packet:
     batch_length: int
     values: 'dict[str, float]' = field(default_factory=dict)
     raw_registers: 'dict[int, bytes]' = field(default_factory=dict)
+    command_failed: bool = False
 
 
 def compute_checksum(data: bytes) -> int:
     """Return the UM7 checksum: unsigned 16-bit sum of ``data``."""
     return sum(data) & 0xFFFF
+
+
+def build_command_packet(address: int) -> bytes:
+    """Build a UM7 command packet (PT=0, no data) for a command address."""
+    body = reg.START_SEQUENCE + bytes((0x00, address))
+    return body + compute_checksum(body).to_bytes(2, 'big')
 
 
 def decode_register(register: reg.Register, chunk: bytes) -> 'dict[str, float]':
@@ -130,7 +137,8 @@ class Um7Parser:
         is_batch = bool(pt & reg.PT_IS_BATCH)
         num_registers = data_len // reg.REGISTER_SIZE
         packet = Packet(address=address, is_batch=is_batch,
-                        batch_length=num_registers)
+                        batch_length=num_registers,
+                        command_failed=bool(pt & reg.PT_COMMAND_FAILED))
         data = candidate[5:5 + data_len]
         for i in range(num_registers):
             reg_address = address + i

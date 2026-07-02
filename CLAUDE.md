@@ -216,7 +216,9 @@ ros2 launch um7_driver um7.launch.py
 - [ ] **이벤트 구동 발행 + 헤더 타임스탬프 정책** 배선.
 - [ ] 시리얼 자동 재연결(뽑혔다 꽂히면 backoff 재시도로 복구); 깔끔한 종료.
 - [ ] launch의 `port:=` 오버라이드가 YAML보다 우선하게 배선 (OpaqueFunction).
-- [ ] `zero_gyros`(0xAD) / `set_mag_reference`(0xB0)를 ROS 서비스로 (UM7 명령 패킷).
+- [x] `zero_gyros`(0xAD) / `set_mag_reference`(0xB0)를 ROS 서비스로 (UM7 명령 패킷).
+      → `std_srvs/Trigger` 서비스 `zero_gyros`, `set_mag_reference` 구현. 명령 패킷(PT=0) 전송 후
+      COMMAND_COMPLETE/FAILED 응답을 기다려 success 반환. 하드웨어로 둘 다 success 확인(2026-07-02).
 - [ ] (선택, 보류) **B 모드**: Q 비트 세팅 write 패킷 + `DREG_QUAT`(÷29789.09091) 직접 사용 경로.
 - [ ] (선택) 진단(checksum 에러율, 패킷 레이트)을 diagnostic_updater로.
 
